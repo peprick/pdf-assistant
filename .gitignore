@@ -25,6 +25,8 @@ backend/uploads/
 frontend/node_modules/
 frontend/dist/
 frontend/logs/
+frontend/*.tsbuildinfo
+*.tsbuildinfo
 
 # Logs
 logs/
