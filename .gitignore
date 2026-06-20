@@ -1,0 +1,7 @@
+.m2/
+.npm-cache/
+backend.zip
+backend/logs/
+frontend/logs/
+frontend/node_modules/
+frontend/dist/
