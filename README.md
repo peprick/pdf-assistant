@@ -49,7 +49,7 @@ flowchart LR
 3. PDFBox extracts text page by page.
 4. Text is split into smaller chunks.
 5. Each chunk is converted into an embedding vector by Ollama.
-6. Chunks and embeddings are stored in H2.
+6. Chunks and embeddings are stored in H2 DB.
 7. When the user asks a question, the backend embeds the question.
 8. The backend compares the question vector with stored chunk vectors.
 9. The most relevant chunks are sent to the chat model.
@@ -222,7 +222,7 @@ Leave password blank.
 
 | Method | Endpoint | Description |
 | --- | --- | --- |
-| `GET` | `/api/health` | Backend health check |
+| `GET` | `/api/health` | Backend health-check |
 | `GET` | `/api/documents` | List uploaded documents |
 | `POST` | `/api/documents` | Upload a PDF |
 | `GET` | `/api/documents/{documentId}` | Get document details |
