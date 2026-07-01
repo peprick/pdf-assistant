@@ -2,7 +2,6 @@ package com.pdfassistant.backend.config;
 
 import java.io.IOException;
 import java.nio.file.Files;
-import java.nio.file.Path;
 
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
@@ -26,6 +25,5 @@ public class BackendConfig {
 
 	private void createDirectories(AppProperties properties) throws IOException {
 		Files.createDirectories(properties.getStorage().getUploadDir().toAbsolutePath().normalize());
-		Files.createDirectories(Path.of("./data/h2").toAbsolutePath().normalize());
 	}
 }

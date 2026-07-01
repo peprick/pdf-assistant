@@ -1,0 +1,50 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-pdf_assistant}
+      POSTGRES_USER: ${POSTGRES_USER:-pdf_assistant}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pdf_assistant}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pdf_assistant} -d ${POSTGRES_DB:-pdf_assistant}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-pdf_assistant}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-pdf_assistant}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-pdf_assistant}
+      APP_STORAGE_UPLOAD_DIR: /app/data/uploads
+      APP_OLLAMA_BASE_URL: ${APP_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      APP_OLLAMA_CHAT_MODEL: ${APP_OLLAMA_CHAT_MODEL:-qwen3:8b}
+      APP_OLLAMA_EMBEDDING_MODEL: ${APP_OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
+      APP_RAG_EMBEDDING_DIMENSIONS: ${APP_RAG_EMBEDDING_DIMENSIONS:-768}
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    volumes:
+      - backend_uploads:/app/data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: /api
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  backend_uploads:

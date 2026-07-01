@@ -1,6 +1,5 @@
 package com.pdfassistant.backend.service;
 
-import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -11,13 +10,13 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.pdfassistant.backend.config.AppProperties;
 import com.pdfassistant.backend.domain.ChatMessage;
-import com.pdfassistant.backend.domain.DocumentChunk;
 import com.pdfassistant.backend.domain.DocumentStatus;
 import com.pdfassistant.backend.domain.PdfDocument;
 import com.pdfassistant.backend.dto.AskQuestionResponse;
 import com.pdfassistant.backend.dto.SourceResponse;
 import com.pdfassistant.backend.repository.ChatMessageRepository;
 import com.pdfassistant.backend.repository.DocumentChunkRepository;
+import com.pdfassistant.backend.repository.DocumentChunkSearchResult;
 import com.pdfassistant.backend.repository.PdfDocumentRepository;
 import com.pdfassistant.backend.service.OllamaClient.OllamaMessage;
 
@@ -37,17 +36,17 @@ public class RagService {
 	private final DocumentChunkRepository chunkRepository;
 	private final ChatMessageRepository chatMessageRepository;
 	private final OllamaClient ollamaClient;
-	private final JsonVectorService jsonVectorService;
+	private final PgVectorService pgVectorService;
 
 	public RagService(AppProperties properties, PdfDocumentRepository documentRepository,
 			DocumentChunkRepository chunkRepository, ChatMessageRepository chatMessageRepository, OllamaClient ollamaClient,
-			JsonVectorService jsonVectorService) {
+			PgVectorService pgVectorService) {
 		this.properties = properties;
 		this.documentRepository = documentRepository;
 		this.chunkRepository = chunkRepository;
 		this.chatMessageRepository = chatMessageRepository;
 		this.ollamaClient = ollamaClient;
-		this.jsonVectorService = jsonVectorService;
+		this.pgVectorService = pgVectorService;
 	}
 
 	@Transactional
@@ -58,17 +57,16 @@ public class RagService {
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Document is not ready for questions");
 		}
 
-		List<DocumentChunk> chunks = chunkRepository.findByDocumentIdOrderByChunkIndex(documentId);
-		if (chunks.isEmpty()) {
+		if (!chunkRepository.existsByDocumentId(documentId)) {
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Document has no searchable chunks");
 		}
 
-		double[] questionVector = toArray(ollamaClient.embed(question));
-		List<ScoredChunk> topChunks = chunks.stream()
-				.map(chunk -> score(chunk, questionVector))
-				.sorted(Comparator.comparingDouble(ScoredChunk::score).reversed())
-				.limit(properties.getRag().getMaxResults())
-				.toList();
+		String questionEmbedding = pgVectorService.toLiteral(ollamaClient.embed(question),
+				properties.getRag().getEmbeddingDimensions());
+		List<DocumentChunkSearchResult> topChunks = chunkRepository.findNearestByDocumentId(
+				documentId,
+				questionEmbedding,
+				properties.getRag().getMaxResults());
 
 		chatMessageRepository.save(new ChatMessage(UUID.randomUUID(), document, "user", question));
 		String answer = cleanAnswer(ollamaClient.chat(List.of(
@@ -79,15 +77,10 @@ public class RagService {
 		return new AskQuestionResponse(answer, topChunks.stream().map(this::toSource).toList());
 	}
 
-	private ScoredChunk score(DocumentChunk chunk, double[] questionVector) {
-		double[] chunkVector = jsonVectorService.fromJson(chunk.getEmbeddingJson());
-		return new ScoredChunk(chunk, VectorMath.cosineSimilarity(questionVector, chunkVector));
-	}
-
-	private String buildPrompt(String question, List<ScoredChunk> topChunks) {
+	private String buildPrompt(String question, List<DocumentChunkSearchResult> topChunks) {
 		StringBuilder context = new StringBuilder();
 		for (int i = 0; i < topChunks.size(); i++) {
-			DocumentChunk chunk = topChunks.get(i).chunk();
+			DocumentChunkSearchResult chunk = topChunks.get(i);
 			context.append("Source ")
 					.append(i + 1)
 					.append(" | page ")
@@ -107,22 +100,13 @@ public class RagService {
 				""".formatted(question, context);
 	}
 
-	private SourceResponse toSource(ScoredChunk scoredChunk) {
-		DocumentChunk chunk = scoredChunk.chunk();
+	private SourceResponse toSource(DocumentChunkSearchResult chunk) {
 		return new SourceResponse(
-				chunk.getId(),
+				chunk.getChunkId(),
 				chunk.getPageNumber(),
 				chunk.getChunkIndex(),
-				round(scoredChunk.score()),
+				round(chunk.getScore()),
 				snippet(chunk.getContent()));
-	}
-
-	private double[] toArray(List<Double> values) {
-		double[] result = new double[values.size()];
-		for (int i = 0; i < values.size(); i++) {
-			result[i] = values.get(i);
-		}
-		return result;
 	}
 
 	private String snippet(String content) {
@@ -139,8 +123,5 @@ public class RagService {
 
 	private double round(double value) {
 		return Math.round(value * 10000.0) / 10000.0;
-	}
-
-	private record ScoredChunk(DocumentChunk chunk, double score) {
 	}
 }

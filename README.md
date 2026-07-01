@@ -1,6 +1,6 @@
 # PDF Assistant
 
-A local PDF question-answering application built with Spring Boot, React, H2, PDFBox, and Ollama.
+A local PDF question-answering application built with Spring Boot, React, PostgreSQL + pgvector, PDFBox, Docker, and Ollama.
 
 The app lets you upload a PDF, indexes its content using embeddings, and answers questions using Retrieval Augmented Generation (RAG). It runs with free local AI models through Ollama, so no paid API key is required.
 
@@ -10,7 +10,7 @@ The app lets you upload a PDF, indexes its content using embeddings, and answers
 - Extract PDF text with Apache PDFBox.
 - Split extracted text into searchable chunks.
 - Generate embeddings locally with Ollama.
-- Store document metadata, chunks, embeddings, and chat history in H2.
+- Store document metadata, chunks, embeddings, and chat history in PostgreSQL with pgvector search.
 - Ask questions against a selected PDF.
 - Generate grounded answers with page references.
 - Show source snippets only when requested.
@@ -22,7 +22,7 @@ The app lets you upload a PDF, indexes its content using embeddings, and answers
 | --- | --- |
 | Frontend | React, TypeScript, Vite |
 | Backend | Spring Boot, Spring Web, Spring Data JPA |
-| Database | H2 file database |
+| Database | PostgreSQL with pgvector |
 | PDF parsing | Apache PDFBox |
 | AI runtime | Ollama |
 | Chat model | `qwen3:8b` by default |
@@ -35,7 +35,7 @@ The app lets you upload a PDF, indexes its content using embeddings, and answers
 flowchart LR
     User["User"] --> Frontend["React Frontend"]
     Frontend --> Backend["Spring Boot API"]
-    Backend --> H2["H2 Database"]
+    Backend --> Postgres["PostgreSQL + pgvector"]
     Backend --> Uploads["Local PDF Storage"]
     Backend --> Ollama["Ollama"]
     Ollama --> Embed["nomic-embed-text"]
@@ -49,9 +49,9 @@ flowchart LR
 3. PDFBox extracts text page by page.
 4. Text is split into smaller chunks.
 5. Each chunk is converted into an embedding vector by Ollama.
-6. Chunks and embeddings are stored in H2 DB.
+6. Chunks and embeddings are stored in PostgreSQL.
 7. When the user asks a question, the backend embeds the question.
-8. The backend compares the question vector with stored chunk vectors.
+8. PostgreSQL ranks stored chunks using pgvector cosine distance.
 9. The most relevant chunks are sent to the chat model.
 10. The model answers using only the retrieved PDF context.
 
@@ -59,12 +59,13 @@ flowchart LR
 
 Install these before running the app:
 
-- Java 17 or later
 - Git
-- Node.js and npm
+- Docker Desktop, recommended for the app stack
 - Ollama
+- Java 17 or later, only for non-Docker backend development
+- Node.js and npm, only for non-Docker frontend development
 
-Docker is not required.
+Docker is the recommended way to run the app stack. Ollama still runs on the host by default so it can use your local model cache and hardware acceleration.
 
 ## Ollama Setup
 
@@ -152,25 +153,72 @@ Important values:
 
 ```properties
 server.port=8080
-spring.datasource.url=jdbc:h2:file:./data/h2/pdf-rag;DB_CLOSE_DELAY=-1
-app.storage.upload-dir=./data/uploads
-app.ollama.base-url=http://localhost:11434
+spring.datasource.url=${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/pdf_assistant}
+app.storage.upload-dir=${APP_STORAGE_UPLOAD_DIR:./data/uploads}
+app.ollama.base-url=${APP_OLLAMA_BASE_URL:http://localhost:11434}
 app.ollama.chat-model=qwen3:8b
 app.ollama.embedding-model=nomic-embed-text
 app.rag.chunk-size=2200
 app.rag.chunk-overlap=250
 app.rag.max-results=5
+app.rag.embedding-dimensions=768
 ```
 
 ## Run Locally
 
-Open two terminals.
+### Docker Compose
+
+Start Ollama on your host machine first, then run:
+
+```powershell
+docker compose up --build
+```
+
+The app runs at:
+
+```text
+http://localhost:5173
+```
+
+Backend API:
+
+```text
+http://localhost:8080
+```
+
+The compose stack starts:
+
+- PostgreSQL with pgvector
+- Spring Boot backend
+- Nginx-served React frontend
+
+Persistent runtime data is stored in Docker volumes:
+
+```text
+postgres_data
+backend_uploads
+```
+
+By default, the backend reaches host Ollama at:
+
+```text
+http://host.docker.internal:11434
+```
+
+If you run without Docker, start PostgreSQL with pgvector first and set `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and `SPRING_DATASOURCE_PASSWORD`.
+
+### Manual Development
+
+Open two terminals after PostgreSQL and Ollama are running.
 
 ### Terminal 1: Backend
 
 ```powershell
 cd C:\Users\Sagarnil\proj\backend
 $env:MAVEN_USER_HOME='C:\Users\Sagarnil\proj\.m2'
+$env:SPRING_DATASOURCE_URL='jdbc:postgresql://localhost:5432/pdf_assistant'
+$env:SPRING_DATASOURCE_USERNAME='pdf_assistant'
+$env:SPRING_DATASOURCE_PASSWORD='pdf_assistant'
 .\mvnw.cmd spring-boot:run
 ```
 
@@ -200,23 +248,23 @@ Frontend runs at:
 http://localhost:5173
 ```
 
-## H2 Console
+## Database
 
-Open:
-
-```text
-http://localhost:8080/h2-console
-```
-
-Use:
+The application uses Flyway migrations from:
 
 ```text
-JDBC URL: jdbc:h2:file:./data/h2/pdf-rag
-User: sa
-Password:
+backend/src/main/resources/db/migration
 ```
 
-Leave password blank.
+The initial migration enables pgvector and creates:
+
+```text
+pdf_documents
+document_chunks
+chat_messages
+```
+
+`document_chunks.embedding` is a `vector(768)` column, matching the default `nomic-embed-text` embedding size. If you change embedding models, also update `APP_RAG_EMBEDDING_DIMENSIONS` and the database schema.
 
 ## API Endpoints
 
@@ -247,7 +295,7 @@ $env:MAVEN_USER_HOME='C:\Users\Sagarnil\proj\.m2'
 .\mvnw.cmd test
 ```
 
-Tests use an in-memory H2 database from:
+Tests use an in-memory database from:
 
 ```text
 backend/src/test/resources/application.properties
@@ -294,7 +342,7 @@ git push -u origin main
 This app needs a real server because it runs:
 
 - Spring Boot
-- H2 file storage
+- PostgreSQL with pgvector
 - Ollama
 - Local AI models
 
@@ -311,8 +359,9 @@ On the VM:
 - Nginx serves the frontend.
 - Nginx proxies `/api/*` to Spring Boot.
 - Spring Boot runs as a systemd service.
+- PostgreSQL with pgvector stores metadata, chunks, embeddings, and chat history.
 - Ollama runs locally on the same VM.
-- Uploaded PDFs and the H2 database stay on VM disk.
+- Uploaded PDFs and database volumes stay on VM disk.
 
 ## Troubleshooting
 
@@ -354,9 +403,9 @@ Also verify:
 http://localhost:11434
 ```
 
-### H2 database is already in use
+### PostgreSQL port is already in use
 
-Only one running backend process can use the file database at a time. Stop old backend processes before starting another one.
+If port `5432` is busy, change `POSTGRES_PORT` in `.env` or stop the other PostgreSQL process.
 
 ### Scanned PDFs do not work
 

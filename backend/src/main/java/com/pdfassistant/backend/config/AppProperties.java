@@ -81,6 +81,7 @@ public class AppProperties {
 		private int chunkSize = 2200;
 		private int chunkOverlap = 250;
 		private int maxResults = 5;
+		private int embeddingDimensions = 768;
 
 		public int getChunkSize() {
 			return chunkSize;
@@ -104,6 +105,14 @@ public class AppProperties {
 
 		public void setMaxResults(int maxResults) {
 			this.maxResults = maxResults;
+		}
+
+		public int getEmbeddingDimensions() {
+			return embeddingDimensions;
+		}
+
+		public void setEmbeddingDimensions(int embeddingDimensions) {
+			this.embeddingDimensions = embeddingDimensions;
 		}
 	}
 }

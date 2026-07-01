@@ -19,13 +19,13 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.pdfassistant.backend.config.AppProperties;
-import com.pdfassistant.backend.domain.DocumentChunk;
 import com.pdfassistant.backend.domain.DocumentStatus;
 import com.pdfassistant.backend.domain.PdfDocument;
 import com.pdfassistant.backend.dto.ChatMessageResponse;
 import com.pdfassistant.backend.dto.DocumentResponse;
 import com.pdfassistant.backend.repository.ChatMessageRepository;
-import com.pdfassistant.backend.repository.DocumentChunkRepository;
+import com.pdfassistant.backend.repository.DocumentChunkJdbcRepository;
+import com.pdfassistant.backend.repository.DocumentChunkJdbcRepository.ChunkInsert;
 import com.pdfassistant.backend.repository.PdfDocumentRepository;
 
 @Service
@@ -35,22 +35,22 @@ public class PdfDocumentService {
 
 	private final AppProperties properties;
 	private final PdfDocumentRepository documentRepository;
-	private final DocumentChunkRepository chunkRepository;
+	private final DocumentChunkJdbcRepository chunkJdbcRepository;
 	private final ChatMessageRepository chatMessageRepository;
 	private final TextChunker textChunker;
 	private final OllamaClient ollamaClient;
-	private final JsonVectorService jsonVectorService;
+	private final PgVectorService pgVectorService;
 
 	public PdfDocumentService(AppProperties properties, PdfDocumentRepository documentRepository,
-			DocumentChunkRepository chunkRepository, ChatMessageRepository chatMessageRepository, TextChunker textChunker,
-			OllamaClient ollamaClient, JsonVectorService jsonVectorService) {
+			DocumentChunkJdbcRepository chunkJdbcRepository, ChatMessageRepository chatMessageRepository,
+			TextChunker textChunker, OllamaClient ollamaClient, PgVectorService pgVectorService) {
 		this.properties = properties;
 		this.documentRepository = documentRepository;
-		this.chunkRepository = chunkRepository;
+		this.chunkJdbcRepository = chunkJdbcRepository;
 		this.chatMessageRepository = chatMessageRepository;
 		this.textChunker = textChunker;
 		this.ollamaClient = ollamaClient;
-		this.jsonVectorService = jsonVectorService;
+		this.pgVectorService = pgVectorService;
 	}
 
 	public DocumentResponse upload(MultipartFile file) {
@@ -133,18 +133,18 @@ public class PdfDocumentService {
 			if (embeddings.size() != batch.size()) {
 				throw new IllegalStateException("Ollama returned a different embedding count than requested");
 			}
-			List<DocumentChunk> chunks = new ArrayList<>();
+			List<ChunkInsert> chunks = new ArrayList<>();
 			for (int i = 0; i < batch.size(); i++) {
 				ChunkDraft draft = batch.get(i);
-				chunks.add(new DocumentChunk(
+				chunks.add(new ChunkInsert(
 						UUID.randomUUID(),
-						document,
+						document.getId(),
 						draft.pageNumber(),
 						chunkIndex++,
 						draft.content(),
-						jsonVectorService.toJson(embeddings.get(i))));
+						pgVectorService.toLiteral(embeddings.get(i), properties.getRag().getEmbeddingDimensions())));
 			}
-			chunkRepository.saveAll(chunks);
+			chunkJdbcRepository.saveAll(chunks);
 		}
 
 		document.setStatus(DocumentStatus.READY);
