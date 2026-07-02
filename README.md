@@ -1,13 +1,14 @@
 # PDF Assistant
 
-A local PDF question-answering application built with Spring Boot, React, PostgreSQL + pgvector, PDFBox, Docker, and Ollama.
+A local PDF question-answering application built with Spring Boot, React, PostgreSQL + pgvector, PDFBox, Tesseract OCR, Docker, and Ollama.
 
 The app lets you upload a PDF, indexes its content using embeddings, and answers questions using Retrieval Augmented Generation (RAG). It runs with free local AI models through Ollama, so no paid API key is required.
 
 ## Features
 
 - Upload PDF documents.
-- Extract PDF text with Apache PDFBox.
+- Extract selectable PDF text with Apache PDFBox.
+- OCR scanned/image-only PDF pages with Tesseract.
 - Split extracted text into searchable chunks.
 - Generate embeddings locally with Ollama.
 - Store document metadata, chunks, embeddings, and chat history in PostgreSQL with pgvector search.
@@ -24,6 +25,7 @@ The app lets you upload a PDF, indexes its content using embeddings, and answers
 | Backend | Spring Boot, Spring Web, Spring Data JPA |
 | Database | PostgreSQL with pgvector |
 | PDF parsing | Apache PDFBox |
+| OCR | Tesseract |
 | AI runtime | Ollama |
 | Chat model | `qwen3:8b` by default |
 | Embedding model | `nomic-embed-text` |
@@ -37,6 +39,7 @@ flowchart LR
     Frontend --> Backend["Spring Boot API"]
     Backend --> Postgres["PostgreSQL + pgvector"]
     Backend --> Uploads["Local PDF Storage"]
+    Backend --> OCR["Tesseract OCR"]
     Backend --> Ollama["Ollama"]
     Ollama --> Embed["nomic-embed-text"]
     Ollama --> Chat["qwen3"]
@@ -47,13 +50,14 @@ flowchart LR
 1. A PDF is uploaded from the frontend.
 2. The backend stores the original PDF under `backend/data/uploads`.
 3. PDFBox extracts text page by page.
-4. Text is split into smaller chunks.
-5. Each chunk is converted into an embedding vector by Ollama.
-6. Chunks and embeddings are stored in PostgreSQL.
-7. When the user asks a question, the backend embeds the question.
-8. PostgreSQL ranks stored chunks using pgvector cosine distance.
-9. The most relevant chunks are sent to the chat model.
-10. The model answers using only the retrieved PDF context.
+4. Pages with too little selectable text are rendered and OCR'd with Tesseract.
+5. Text is split into smaller chunks.
+6. Each chunk is converted into an embedding vector by Ollama.
+7. Chunks and embeddings are stored in PostgreSQL.
+8. When the user asks a question, the backend embeds the question.
+9. PostgreSQL ranks stored chunks using pgvector cosine distance.
+10. The most relevant chunks are sent to the chat model.
+11. The model answers using only the retrieved PDF context.
 
 ## Prerequisites
 
@@ -62,10 +66,11 @@ Install these before running the app:
 - Git
 - Docker Desktop, recommended for the app stack
 - Ollama
+- Tesseract, only for non-Docker backend development with scanned PDFs
 - Java 17 or later, only for non-Docker backend development
 - Node.js and npm, only for non-Docker frontend development
 
-Docker is the recommended way to run the app stack. Ollama still runs on the host by default so it can use your local model cache and hardware acceleration.
+Docker is the recommended way to run the app stack. The backend image installs Tesseract automatically. Ollama still runs on the host by default so it can use your local model cache and hardware acceleration.
 
 ## Ollama Setup
 
@@ -162,6 +167,13 @@ app.rag.chunk-size=2200
 app.rag.chunk-overlap=250
 app.rag.max-results=5
 app.rag.embedding-dimensions=768
+app.ocr.enabled=true
+app.ocr.tesseract-command=tesseract
+app.ocr.language=eng
+app.ocr.dpi=300
+app.ocr.page-segmentation-mode=6
+app.ocr.min-text-characters-per-page=40
+app.ocr.timeout-seconds=60
 ```
 
 ## Run Locally
@@ -190,6 +202,7 @@ The compose stack starts:
 
 - PostgreSQL with pgvector
 - Spring Boot backend
+- Tesseract OCR inside the backend container
 - Nginx-served React frontend
 
 Persistent runtime data is stored in Docker volumes:
@@ -205,7 +218,7 @@ By default, the backend reaches host Ollama at:
 http://host.docker.internal:11434
 ```
 
-If you run without Docker, start PostgreSQL with pgvector first and set `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and `SPRING_DATASOURCE_PASSWORD`.
+If you run without Docker, start PostgreSQL with pgvector first and set `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and `SPRING_DATASOURCE_PASSWORD`. Install Tesseract and make sure the `tesseract` command is on your `PATH` if you want scanned PDF support.
 
 ### Manual Development
 
@@ -407,9 +420,27 @@ http://localhost:11434
 
 If port `5432` is busy, change `POSTGRES_PORT` in `.env` or stop the other PostgreSQL process.
 
-### Scanned PDFs do not work
+### Scanned PDFs are slow or fail
 
-The current version extracts selectable text from PDFs. Scanned/image-only PDFs need OCR support, such as Tesseract, which is not implemented yet.
+OCR is slower than selectable-text extraction because every sparse page is rendered as an image and processed by Tesseract.
+
+With Docker, rebuild the backend image so Tesseract is installed:
+
+```powershell
+docker compose up --build
+```
+
+For manual backend runs, verify Tesseract is available:
+
+```powershell
+tesseract --version
+```
+
+If OCR is too slow, lower `APP_OCR_DPI`, lower `APP_OCR_MIN_TEXT_CHARACTERS_PER_PAGE`, or disable OCR with:
+
+```properties
+APP_OCR_ENABLED=false
+```
 
 ## License
 

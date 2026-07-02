@@ -10,6 +10,7 @@ public class AppProperties {
 	private Storage storage = new Storage();
 	private Ollama ollama = new Ollama();
 	private Rag rag = new Rag();
+	private Ocr ocr = new Ocr();
 
 	public Storage getStorage() {
 		return storage;
@@ -33,6 +34,14 @@ public class AppProperties {
 
 	public void setRag(Rag rag) {
 		this.rag = rag;
+	}
+
+	public Ocr getOcr() {
+		return ocr;
+	}
+
+	public void setOcr(Ocr ocr) {
+		this.ocr = ocr;
 	}
 
 	public static class Storage {
@@ -113,6 +122,72 @@ public class AppProperties {
 
 		public void setEmbeddingDimensions(int embeddingDimensions) {
 			this.embeddingDimensions = embeddingDimensions;
+		}
+	}
+
+	public static class Ocr {
+		private boolean enabled = true;
+		private String tesseractCommand = "tesseract";
+		private String language = "eng";
+		private int dpi = 300;
+		private int pageSegmentationMode = 6;
+		private int minTextCharactersPerPage = 40;
+		private int timeoutSeconds = 60;
+
+		public boolean isEnabled() {
+			return enabled;
+		}
+
+		public void setEnabled(boolean enabled) {
+			this.enabled = enabled;
+		}
+
+		public String getTesseractCommand() {
+			return tesseractCommand;
+		}
+
+		public void setTesseractCommand(String tesseractCommand) {
+			this.tesseractCommand = tesseractCommand;
+		}
+
+		public String getLanguage() {
+			return language;
+		}
+
+		public void setLanguage(String language) {
+			this.language = language;
+		}
+
+		public int getDpi() {
+			return dpi;
+		}
+
+		public void setDpi(int dpi) {
+			this.dpi = dpi;
+		}
+
+		public int getPageSegmentationMode() {
+			return pageSegmentationMode;
+		}
+
+		public void setPageSegmentationMode(int pageSegmentationMode) {
+			this.pageSegmentationMode = pageSegmentationMode;
+		}
+
+		public int getMinTextCharactersPerPage() {
+			return minTextCharactersPerPage;
+		}
+
+		public void setMinTextCharactersPerPage(int minTextCharactersPerPage) {
+			this.minTextCharactersPerPage = minTextCharactersPerPage;
+		}
+
+		public int getTimeoutSeconds() {
+			return timeoutSeconds;
+		}
+
+		public void setTimeoutSeconds(int timeoutSeconds) {
+			this.timeoutSeconds = timeoutSeconds;
 		}
 	}
 }

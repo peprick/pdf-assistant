@@ -10,6 +10,7 @@ import java.util.UUID;
 
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -40,10 +41,12 @@ public class PdfDocumentService {
 	private final TextChunker textChunker;
 	private final OllamaClient ollamaClient;
 	private final PgVectorService pgVectorService;
+	private final OcrService ocrService;
 
 	public PdfDocumentService(AppProperties properties, PdfDocumentRepository documentRepository,
 			DocumentChunkJdbcRepository chunkJdbcRepository, ChatMessageRepository chatMessageRepository,
-			TextChunker textChunker, OllamaClient ollamaClient, PgVectorService pgVectorService) {
+			TextChunker textChunker, OllamaClient ollamaClient, PgVectorService pgVectorService,
+			OcrService ocrService) {
 		this.properties = properties;
 		this.documentRepository = documentRepository;
 		this.chunkJdbcRepository = chunkJdbcRepository;
@@ -51,6 +54,7 @@ public class PdfDocumentService {
 		this.textChunker = textChunker;
 		this.ollamaClient = ollamaClient;
 		this.pgVectorService = pgVectorService;
+		this.ocrService = ocrService;
 	}
 
 	public DocumentResponse upload(MultipartFile file) {
@@ -121,7 +125,7 @@ public class PdfDocumentService {
 		document.setPageCount(extraction.pageCount());
 		if (extraction.chunks().isEmpty()) {
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-					"No extractable text was found. Scanned PDFs will need OCR support.");
+					"No extractable text was found after PDF extraction and OCR.");
 		}
 
 		int chunkIndex = 0;
@@ -154,10 +158,14 @@ public class PdfDocumentService {
 		List<ChunkDraft> chunks = new ArrayList<>();
 		try (PDDocument pdf = Loader.loadPDF(pdfPath.toFile())) {
 			PDFTextStripper stripper = new PDFTextStripper();
+			PDFRenderer renderer = new PDFRenderer(pdf);
 			for (int page = 1; page <= pdf.getNumberOfPages(); page++) {
 				stripper.setStartPage(page);
 				stripper.setEndPage(page);
 				String pageText = stripper.getText(pdf);
+				if (shouldUseOcr(pageText)) {
+					pageText = mergeText(pageText, ocrService.extractPageText(renderer, page - 1));
+				}
 				for (String chunk : textChunker.chunk(pageText, properties.getRag().getChunkSize(),
 						properties.getRag().getChunkOverlap())) {
 					chunks.add(new ChunkDraft(page, chunk));
@@ -165,6 +173,27 @@ public class PdfDocumentService {
 			}
 			return new ExtractionResult(pdf.getNumberOfPages(), chunks);
 		}
+	}
+
+	private boolean shouldUseOcr(String pageText) {
+		if (!ocrService.isEnabled()) {
+			return false;
+		}
+		long usefulCharacters = pageText == null ? 0
+				: pageText.chars().filter(Character::isLetterOrDigit).count();
+		return usefulCharacters < properties.getOcr().getMinTextCharactersPerPage();
+	}
+
+	private String mergeText(String extractedText, String ocrText) {
+		String original = extractedText == null ? "" : extractedText.trim();
+		String ocr = ocrText == null ? "" : ocrText.trim();
+		if (original.isBlank()) {
+			return ocr;
+		}
+		if (ocr.isBlank()) {
+			return original;
+		}
+		return original + "\n\n" + ocr;
 	}
 
 	private String limit(String value, int maxLength) {
