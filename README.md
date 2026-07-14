@@ -15,7 +15,7 @@ The app lets you upload a PDF, indexes its content using embeddings, and answers
 - Ask questions against a selected PDF.
 - Generate grounded answers with page references.
 - Show source snippets only when requested.
-- React frontend with upload, document list, chat, loading overlay, and source toggle.
+- React frontend with upload, document-list, chat, loading overlay, and source toggle.
 
 ## Tech Stack
 
