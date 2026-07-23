@@ -2,7 +2,7 @@
 
 A local PDF question-answering application built with Spring Boot, React, PostgreSQL + pgvector, PDFBox, Tesseract OCR, Docker, and Ollama.
 
-The app lets you upload a PDF, indexes its content using embeddings, and answers questions using Retrieval Augmented Generation (RAG). It runs with free local AI models through Ollama, so no paid API key is required.
+The app lets you upload a PDF, indexes its content using embeddings, and answers questions using Retrieval Augmented Generation(RAG). It runs with free local AI models through Ollama, so no paid API key is required.
 
 ## Features
 
